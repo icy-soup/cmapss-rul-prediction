@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+venv/
+.env
+
+# IDE
+.idea/
+.vscode/
+
+# Data (too large)
+archive/
+
+# Results (regenerable)
+results/figures/
+results/CMAPSS_Results.xlsx
+
+# Literature PDFs
+docs/literature/
+
+# Internal reports (not for sharing)
+docs/MSPatch_RUL_技术报告.md
+docs/MSPatch_RUL_Report.md
+
+# Claude project memory
+.claude/
+
+# Skill test outputs (regenerable)
+skills/transformer-timeseries-workflow/evals/iteration-*/

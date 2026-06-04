@@ -1,0 +1,19 @@
+{
+  "skill_name": "transformer-timeseries-workflow",
+  "evals": [
+    {
+      "id": 1,
+      "name": "data-preprocessing-debug",
+      "prompt": "我在做一个多工况传感器时间序列预测项目，模型在复杂工况子集上预测值几乎恒定（坍缩了），但在简单工况上表现还行。我已经试过调整学习率、增加层数、改dropout，都没用。接下来该怎么办？",
+      "expected_output": "应该先检查数据预处理而非继续调架构，包含归一化和工况特征检查",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "ablation-study-plan",
+      "prompt": "我设计了一个三分支时间序列模型（小/中/大三种patch size），想要验证每个分支是否真的有贡献。应该怎么设计消融实验？",
+      "expected_output": "包含分支数量消融和融合方式消融的设计方案",
+      "files": []
+    }
+  ]
+}
