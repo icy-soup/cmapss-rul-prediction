@@ -30,10 +30,14 @@ class ConvPatchiTransformerRUL(nn.Module):
         self.regressor = MLPRegressor(cfg.d_model)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # 把传感器挪到通道维，方便用卷积处理时间序列
         x = x.transpose(1, 2)
+        # 用卷积增强的 Patch Embedding 提取局部退化特征
         x = self.patch_embed(x)
         B, C, N, D = x.shape
+        # 把每个传感器的 patch 序列拉平，拼成一个 token 给 iTransformer
         x = x.reshape(B, C, N * D)
+        # 跨传感器做自注意力，捕捉传感器之间的关联
         x = self.itrans_encoder(x)
         x = self.regressor(x)
         return x

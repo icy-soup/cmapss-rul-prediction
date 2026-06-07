@@ -15,17 +15,17 @@ class iTransformerEncoder(nn.Module):
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model, nhead=n_heads, dim_feedforward=d_ff,
             dropout=dropout, activation=activation, batch_first=True,
-            norm_first=True,  # Pre-LN: stabilize training (iTransformer default)
+            norm_first=True,  # Pre-LN 训练更稳定（iTransformer 默认）
         )
         self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=e_layers)
         self.norm = nn.LayerNorm(d_model)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.proj_in(x)
-        x = x + self.pos_embed            # 加位置编码
+        x = x + self.pos_embed
         x = self.encoder(x)
         x = self.norm(x)
-        x = x.mean(dim=1)                 # 在变量维度上池化
+        x = x.mean(dim=1)                 # 把所有传感器 token 平均成一条
         return x
 
 
@@ -74,10 +74,10 @@ class PatchiTransformerRUL(nn.Module):
         self.regressor = MLPRegressor(cfg.d_model)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x.transpose(1, 2)                 # (B, C, L) 传感器→通道维度
-        x = self.patch_embed(x)               # (B, C, N, d_model)
+        x = x.transpose(1, 2)                 # 把传感器移到通道维，方便做 patch
+        x = self.patch_embed(x)               # 时间维切成 patch 并投影
         B, C, N, D = x.shape
-        x = x.reshape(B, C, N * D)            # (B, C, N*D) 拼合 patch 维度
-        x = self.itrans_encoder(x)            # (B, d_model)
+        x = x.reshape(B, C, N * D)            # 拉平每个传感器的 patch 序列
+        x = self.itrans_encoder(x)            # 跨传感器做注意力
         x = self.regressor(x)
         return x

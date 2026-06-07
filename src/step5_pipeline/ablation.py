@@ -1,11 +1,7 @@
-"""Ablation experiments for Person 2: MSPatch-iTransformer-RUL.
+"""Person 2 的消融实验，用来验证分支数量和融合方式对效果的影响
 
-Usage: python -u src/step5_pipeline/ablation.py [--subset FD001]
-
-Experiments:
-  A: Branch count — 8 variants testing different branch combinations
-  B: Fusion method — 3 variants on 3-branch architecture
-  C: Best config on FD004
+用法：python -u src/step5_pipeline/ablation.py [--subset FD001]
+实验 A 跑 7 种分支组合，实验 B 跑 3 种融合方法
 """
 
 import argparse, json, csv, os, sys
@@ -26,7 +22,7 @@ def set_seed(seed: int):
 
 
 def run_experiment(cfg, label, save_dir="results/ablation"):
-    """Run a single ablation experiment. Returns metrics dict."""
+    """跑一次消融实验，训练、评估、保存结果"""
     print(f"\n{'='*60}")
     print(f"ABLATION: {label}")
     print(f"  branch_indices={cfg.branch_indices}, fusion={cfg.fusion_mode}")
@@ -34,11 +30,13 @@ def run_experiment(cfg, label, save_dir="results/ablation"):
     print(f"{'='*60}")
 
     set_seed(cfg.seed)
+    cfg.num_workers = 0
+    cfg.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # Load data
+    # 加载数据
     X_train, y_train, unit_ids, X_test, y_test = load_data(cfg)
 
-    # Split by engine
+    # 按引擎划分训练验证集
     unique_engines = np.unique(unit_ids)
     np.random.shuffle(unique_engines)
     n_val = max(1, int(len(unique_engines) * (1 - cfg.train_ratio)))
@@ -48,27 +46,27 @@ def run_experiment(cfg, label, save_dir="results/ablation"):
     X_val, y_val = X_train[val_mask], y_train[val_mask]
     X_tr, y_tr = X_train[~val_mask], y_train[~val_mask]
 
-    # Model
+    # 建模型
     model = MSPatchiTransformerRUL(cfg)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"Params: {n_params:,}")
 
-    # Train
+    # 训练
     trainer = Trainer(model, cfg, cfg.device)
     history = trainer.fit(X_tr, y_tr, X_val, y_val)
 
-    # Evaluate
+    # 评估
     trainer.load_best()
     y_pred = trainer.predict(X_test)
     metrics = all_metrics(y_test, y_pred)
 
-    # Print
+    # 打印结果
     print(f"\n>>> {label}")
     for k, v in metrics.items():
         print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
     print(f"  pred_range=[{y_pred.min():.1f}, {y_pred.max():.1f}]")
 
-    # Save results
+    # 保存到 ablation 目录
     prefix = f"{save_dir}/ablation_{label.replace('/', '_').replace(' ', '_')}"
     with open(f"{prefix}_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
@@ -86,10 +84,9 @@ def main():
     args = parser.parse_args()
     subset = args.subset
 
-    # Determine branch description strings
     BRANCH_NAMES = ["P8S4", "P16S8", "P32S16"]
 
-    # ── Ablation A: Branch count ──────────────────────────
+    # 实验 A：从单分支到三分支，共 7 种组合
     branch_configs = [
         ((0,), "A0-P8S4"),
         ((1,), "A1-P16S8"),
@@ -100,7 +97,7 @@ def main():
         ((0, 1, 2), "A6-all3"),
     ]
 
-    # ── Ablation B: Fusion method ─────────────────────────
+    # 实验 B：在三分支上试三种融合方式
     fusion_configs = [
         ("concat", "B0-concat"),
         ("weighted_sum", "B1-weighted_sum"),
@@ -109,7 +106,7 @@ def main():
 
     results = []
 
-    # Run Ablation A
+    # 跑实验 A
     print(f"\n{'#'*60}")
     print(f"# ABLATION A: Branch Count (subset={subset})")
     print(f"{'#'*60}")
@@ -128,7 +125,7 @@ def main():
             **m,
         })
 
-    # Run Ablation B (only on 3-branch)
+    # 跑实验 B
     print(f"\n{'#'*60}")
     print(f"# ABLATION B: Fusion Method (subset={subset})")
     print(f"{'#'*60}")
@@ -147,7 +144,7 @@ def main():
             **m,
         })
 
-    # Save ablation summary
+    # 汇总保存到 CSV
     csv_path = "results/ablation/ablation_summary.csv"
     fieldnames = ["experiment", "branches", "n_branches", "fusion", "subset",
                    "RMSE", "R2", "Score", "params", "pred_range"]
@@ -157,7 +154,7 @@ def main():
         for r in results:
             w.writerow({k: r.get(k, "") for k in fieldnames})
 
-    # Print comparison table
+    # 打印汇总对比表
     print(f"\n{'='*70}")
     print(f"ABLATION SUMMARY ({subset})")
     print(f"{'='*70}")

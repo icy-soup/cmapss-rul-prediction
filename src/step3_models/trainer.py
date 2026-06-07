@@ -15,7 +15,7 @@ class WarmupCosineScheduler:
         self.total_epochs = total_epochs
         self.epoch = 0
         for group in self.optimizer.param_groups:
-            group["lr"] = 1e-8  # 从近零开始
+            group["lr"] = 1e-8  # 从近乎零的学习率开始热身
 
     def step(self):
         self.epoch += 1
@@ -43,7 +43,6 @@ class Trainer:
 
     def fit(self, X_train, y_train, X_val=None, y_val=None):
         cfg = self.cfg
-        # Build dataloader
         X_t = torch.tensor(X_train, dtype=torch.float32)
         y_t = torch.tensor(y_train, dtype=torch.float32)
         train_loader = DataLoader(
@@ -55,7 +54,6 @@ class Trainer:
             persistent_workers=cfg.num_workers > 0,
         )
 
-        # Validation set
         if X_val is not None:
             X_v = torch.tensor(X_val, dtype=torch.float32)
             y_v = torch.tensor(y_val, dtype=torch.float32)
@@ -72,7 +70,7 @@ class Trainer:
         history = {"train_loss": [], "val_loss": [], "val_rmse": [], "val_score": [], "val_r2": []}
 
         for epoch in range(1, cfg.epochs + 1):
-            self.scheduler.step()  # Set LR for this epoch before training
+            self.scheduler.step()  # 每个 epoch 先更新学习率
             self.model.train()
             epoch_loss = 0
             for Xb, yb in train_loader:
@@ -88,7 +86,6 @@ class Trainer:
             train_loss = epoch_loss / len(X_t)
             history["train_loss"].append(train_loss)
 
-            # Validation
             if X_val is not None:
                 val_loss, val_rmse, val_score, val_r2 = self._evaluate(val_loader)
                 history["val_loss"].append(val_loss)
@@ -113,8 +110,6 @@ class Trainer:
             else:
                 if epoch % 10 == 0:
                     print(f"Epoch {epoch:3d} | train_loss={train_loss:.4f}")
-
-            # scheduler.step() is called at the START of each epoch for warmup control
 
         return history
 

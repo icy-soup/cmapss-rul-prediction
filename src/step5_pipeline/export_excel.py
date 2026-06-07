@@ -1,4 +1,4 @@
-"""CMAPSS 全部结果导出到 Excel"""
+"""把所有实验结果汇总到一张 Excel 里，方便汇报和归档"""
 import json, numpy as np
 from pathlib import Path
 import csv
@@ -9,6 +9,7 @@ from openpyxl.utils import get_column_letter
 RESULTS = Path("results")
 wb = openpyxl.Workbook()
 
+# 表格样式
 HEADER_FONT = Font(bold=True, size=11)
 HEADER_FILL = PatternFill("solid", fgColor="4472C4")
 HEADER_FONT_W = Font(bold=True, size=11, color="FFFFFF")
@@ -19,7 +20,7 @@ THIN_BORDER = Border(
     top=Side(style="thin"), bottom=Side(style="thin"),
 )
 
-# 已知参数量（从模型定义计算得到）
+# 从模型定义里查到的参数量，懒得每次重算
 PARAMS = {
     "PatchiTransformerRUL": {"FD001": 1748561, "FD002": 1945169, "FD003": 1748561, "FD004": 1945169},
     "ConvPatchiTransformerRUL": {"FD001": 1748566, "FD002": 1945174, "FD003": 1748566, "FD004": 1945174},
@@ -27,7 +28,7 @@ PARAMS = {
 }
 
 def _find(pattern: str) -> Path:
-    """在 results/ 及其子目录中查找文件"""
+    """在 results 目录树里找文件，主实验和消融子目录都会翻一遍"""
     p = RESULTS / pattern
     if p.exists(): return p
     for sub in ["main_experiments", "ablation"]:
@@ -44,6 +45,7 @@ def style_header(ws, ncols):
         cell.border = THIN_BORDER
 
 def auto_width(ws, ncols, nrows):
+    """自动调整列宽，别太宽也别太窄"""
     for col in range(1, ncols + 1):
         max_len = 0
         for row in range(1, nrows + 1):
@@ -52,7 +54,7 @@ def auto_width(ws, ncols, nrows):
                 max_len = max(max_len, len(str(val)))
         ws.column_dimensions[get_column_letter(col)].width = min(max_len + 3, 25)
 
-# ===== Sheet 1: 汇总 =====
+# ===== 第一个工作表：三个模型四个子集的成绩总表 =====
 ws = wb.active
 ws.title = "Summary"
 headers = ["Model", "Subset", "Window", "RMSE", "Score", "R2", "Params", "Status"]
@@ -68,7 +70,7 @@ for model in models:
         if not f.exists():
             continue
         m = json.load(open(f))
-        # 从配置取窗口大小
+        # 从配置文件里翻一下窗口大小
         cfg_f = _find(f"{model}_{subset}_config.json")
         cfg = json.load(open(cfg_f)) if cfg_f.exists() else {}
         wsize = cfg.get("window_size", "?")
@@ -78,6 +80,7 @@ for model in models:
         ws.append([model, subset, wsize,
                     round(m["RMSE"], 2), round(m["Score"], 2), round(m.get("R2", 0), 4),
                     params, status])
+        # Person 2 是核心模型，给行标个绿色
         if "MSPatch" in model:
             for c in range(1, 9):
                 ws.cell(row=row, column=c).fill = BEST_FILL
@@ -85,7 +88,7 @@ for model in models:
 
 auto_width(ws, len(headers), row - 1)
 
-# ===== Sheet 2: FD001 消融 =====
+# ===== 第二个工作表：FD001 上的消融实验 =====
 ws2 = wb.create_sheet("Ablation FD001")
 headers2 = ["Experiment", "Branches", "RMSE", "R2", "Score", "Params"]
 ws2.append(headers2)
@@ -103,13 +106,13 @@ if ablation_csv.exists():
             row2 += 1
 auto_width(ws2, len(headers2), row2 - 1)
 
-# ===== Sheet 3: FD004 消融 =====
+# ===== 第三个工作表：FD004 上的消融验证 =====
 ws3 = wb.create_sheet("Ablation FD004")
 headers3 = ["Config", "RMSE", "R2", "Score", "Params"]
 ws3.append(headers3)
 style_header(ws3, len(headers3))
 
-# 从 FD004 消融实验文件读取
+# 逐条读 FD004 消融的实验结果文件
 fd004_configs = [
     ("ablation_FD004_single-small_metrics.json", "P8S4"),
     ("ablation_FD004_single-medium_metrics.json", "P16S8"),
@@ -125,7 +128,7 @@ for fname, label in fd004_configs:
                     round(m["Score"], 1), fd004_pm[label]])
         row3 += 1
 
-# 补充 3-branch 和 Base（从主实验取）
+# 再从主实验里拿三分支和 Base 的 FD004 结果做个对比参考
 for model, subset, label, pm in [
     ("MSPatchiTransformerRUL", "FD004", "3-branch", "3.79M"),
     ("PatchiTransformerRUL", "FD004", "Base", "1.95M"),
@@ -139,7 +142,7 @@ for model, subset, label, pm in [
 
 auto_width(ws3, len(headers3), row3 - 1)
 
-# ===== Sheet 4: 训练历史 =====
+# ===== 第四个工作表：训练历史摘要 =====
 ws4 = wb.create_sheet("Training")
 headers4 = ["Model", "Subset", "Epochs", "Final Loss", "Best Val RMSE"]
 ws4.append(headers4)

@@ -12,6 +12,7 @@ def r2(y_true: np.ndarray, y_pred: np.ndarray) -> float:
 
 
 def phm08_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """预测偏早就罚轻一点，偏晚就罚重一点"""
     d = y_pred - y_true
     s = np.where(d < 0, np.exp(-d / 13) - 1, np.exp(d / 10) - 1)
     return float(np.sum(s))

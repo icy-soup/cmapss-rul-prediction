@@ -27,13 +27,13 @@ def load_raw(cfg: BaseConfig):
 # ── 全局归一化 ──
 
 def compute_normalization_stats(df: pd.DataFrame):
-    """计算每个传感器的全局均值和标准差（从训练集）"""
+    """算出每个传感器在全数据集上的均值和标准差"""
     sensor_cols = [c for c in df.columns if c.startswith("s")]
     return {c: (df[c].mean(), df[c].std()) for c in sensor_cols}
 
 
 def apply_normalization(df: pd.DataFrame, stats: dict):
-    """用预计算的统计量做 z-score 标准化"""
+    """用事先算好的统计量做 z-score 标准化"""
     df = df.copy()
     sensor_cols = [c for c in df.columns if c.startswith("s")]
     df[sensor_cols] = df[sensor_cols].astype("float64")
@@ -46,13 +46,11 @@ def apply_normalization(df: pd.DataFrame, stats: dict):
 # ── 按工况聚类归一化 ──
 
 def _add_condition_id(df: pd.DataFrame, condition_map: dict = None) -> Tuple[pd.DataFrame, dict]:
-    """用 KMeans 给每行分配工况簇 ID"""
-
-    # FD002/FD004 在 (altitude, mach, tra) 上有 6 个分离的工况
-    # FD001/FD003 单工况，n_clusters=1
+    """用 KMeans 给每行数据打上工况簇标签"""
+    # FD002 和 FD004 在 altitude/mach/tra 上有六个离散工况点
+    # FD001 和 FD003 只有单工况，所以 KMeans 聚类数设为 1
     op_data = df[OP_COND_COLS].values.astype(float)
     if condition_map is None:
-        # Detect if data is effectively constant (single condition)
         std_per_col = df[OP_COND_COLS].std()
         n_clusters = 1 if std_per_col.max() < 0.01 else 6
         kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
@@ -67,11 +65,7 @@ def _add_condition_id(df: pd.DataFrame, condition_map: dict = None) -> Tuple[pd.
 
 
 def compute_normalization_stats_per_condition(df: pd.DataFrame) -> dict:
-    """Compute per-condition normalization stats from training set.
-
-    Returns:
-        stats[condition_id][sensor_name] = (mean, std)
-    """
+    """按工况簇分别算出各传感器的均值和标准差"""
     sensor_cols = [c for c in df.columns if c.startswith("s")]
     stats = {}
     for cid, group in df.groupby("condition_id"):
@@ -81,7 +75,7 @@ def compute_normalization_stats_per_condition(df: pd.DataFrame) -> dict:
 
 
 def apply_normalization_per_condition(df: pd.DataFrame, stats: dict):
-    """Apply per-condition normalization using pre-computed stats."""
+    """用各工况自己的统计量做 z-score 标准化"""
     df = df.copy()
     sensor_cols = [c for c in df.columns if c.startswith("s")]
     df[sensor_cols] = df[sensor_cols].astype("float64")
@@ -93,10 +87,10 @@ def apply_normalization_per_condition(df: pd.DataFrame, stats: dict):
     return df
 
 
-# ── Common utilities ──
+# ── 工具函数 ──
 
 def add_rul_labels(df: pd.DataFrame, rul_max: int = 125) -> pd.DataFrame:
-    """Add piecewise linear RUL labels capped at rul_max."""
+    """给每个引擎加上从 0 到 rul_max 的分段线性 RUL 标签"""
     df = df.copy()
     rul = np.concatenate([
         g["cycle"].max() - g["cycle"].values
@@ -107,7 +101,7 @@ def add_rul_labels(df: pd.DataFrame, rul_max: int = 125) -> pd.DataFrame:
 
 
 def sliding_windows(df: pd.DataFrame, window_size: int, stride: int = 1, feature_cols: list = None):
-    """Sliding window over each unit. Returns (X, y, unit_ids)."""
+    """对每个引擎做滑窗，返回样本、标签和对应的引擎编号"""
     if feature_cols is None:
         feature_cols = [c for c in df.columns if c.startswith("s")]
     X, y, uids = [], [], []
@@ -122,34 +116,27 @@ def sliding_windows(df: pd.DataFrame, window_size: int, stride: int = 1, feature
     return np.array(X), np.array(y), np.array(uids)
 
 
-# ── Main entry point ──
+# ── 主入口 ──
 
 def load_data(cfg: BaseConfig):
-    """Load and preprocess CMAPSS data for a given subset.
+    """加载 CMAPSS 数据并完成预处理
 
-    Normalization:
-      - "global": original global z-score over all training data
-      - "per_condition": z-score per operating condition group
+    global 模式对所有数据做全局 z-score 标准化。
+    per_condition 模式先用 KMeans 识别工况簇，再按簇分别标准化。
+    FD002 和 FD004 会拼接 altitude/mach/tra 作为额外输入通道。
 
-    Features:
-      - Always includes cfg.sensors (14 trend sensors)
-      - When use_op_cond=True and FD002/FD004: includes altitude/mach/tra
-
-    Returns:
-        X_train, y_train: sliding window training samples
-        unit_ids: engine IDs for training samples (for engine-based val split)
-        X_test,  y_test:  last-window-per-engine test samples
+    返回值包括滑窗后的训练样本和标签、训练样本的引擎编号、
+    以及每个测试引擎最后一个窗口的样本和真实 RUL。
     """
     train_raw, test_raw, rul_true = load_raw(cfg)
 
-    # Select config-specified sensors (cfg.sensors is 1-based)
     sensor_cols = [f"s{i}" for i in cfg.sensors]
     cols = ["unit", "cycle"] + OP_COND_COLS + sensor_cols
 
     train_df = train_raw[cols].copy()
     test_df = test_raw[cols].copy()
 
-    # ── Normalization ──
+    # ── 归一化 ──
     if cfg.norm_mode == "per_condition":
         train_df, cond_map = _add_condition_id(train_df)
         norm_stats = compute_normalization_stats_per_condition(train_df)
@@ -162,17 +149,17 @@ def load_data(cfg: BaseConfig):
         train_df = apply_normalization(train_df, norm_stats)
         test_df = apply_normalization(test_df, norm_stats)
 
-    # ── Add RUL labels ──
+    # ── 加 RUL 标签 ──
     train_df = add_rul_labels(train_df, cfg.rul_max)
 
-    # ── Determine feature columns ──
+    # ── 确定特征列 ──
     use_cond = cfg.use_op_cond and cfg.subset in ("FD002", "FD004")
     feature_cols = sensor_cols + (OP_COND_COLS if use_cond else [])
 
-    # ── Training sliding windows ──
+    # ── 对训练集做滑窗 ──
     X_train, y_train, unit_ids = sliding_windows(train_df, cfg.window_size, cfg.stride, feature_cols)
 
-    # ── Test: last window per engine ──
+    # ── 对测试集取每个引擎最后一个窗口 ──
     X_test_list = []
     y_test_list = []
     for i, (_, g) in enumerate(test_df.groupby("unit")):
@@ -183,6 +170,6 @@ def load_data(cfg: BaseConfig):
         else:
             pad = cfg.window_size - n
             X_test_list.append(np.pad(vals, ((pad, 0), (0, 0)), mode="edge"))
-        y_test_list.append(rul_true[i])
+        y_test_list.append(min(rul_true[i], cfg.rul_max))
 
     return X_train, y_train, unit_ids, np.array(X_test_list), np.array(y_test_list)

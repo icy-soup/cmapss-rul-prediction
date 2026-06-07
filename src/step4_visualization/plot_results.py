@@ -1,4 +1,4 @@
-"""CMAPSS 预测结果可视化，生成两套图：全模型对比 + Base vs Person 2 精简版"""
+"""CMAPSS 预测结果可视化：全模型对比图 + 按子集独立图"""
 import json, numpy as np
 from pathlib import Path
 import matplotlib
@@ -65,15 +65,6 @@ def plot_training_curves(models, save_path, ncols, figsize):
             ax.semilogy(epochs, hist["train_loss"], label="Train Loss", color=color, linewidth=0.8)
             if "val_loss" in hist and hist["val_loss"]:
                 ax.semilogy(epochs, hist["val_loss"], label="Val Loss", color=color, linestyle="--", linewidth=0.8)
-            if "val_rmse" in hist and hist["val_rmse"]:
-                ax2 = ax.twinx()
-                ax2.plot(epochs, hist["val_rmse"], label="Val RMSE", color="gray", linewidth=0.7, linestyle=":")
-                ax2.set_ylabel("RMSE", fontsize=7, color="gray")
-                ax2.tick_params(labelsize=6, colors="gray")
-                final_rmse = hist["val_rmse"][-1]
-                ax2.text(0.95, 0.95, f"RMSE={final_rmse:.1f}", transform=ax2.transAxes,
-                         fontsize=7, color="gray", ha="right", va="top",
-                         bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="gray", alpha=0.7))
             ax.set_xlabel("Epoch", fontsize=7)
             ax.set_ylabel("Loss (log)", fontsize=7)
             ax.set_title(f"{model_label}\n{subset}", fontsize=9)
@@ -109,7 +100,8 @@ def plot_scatter(models, save_path, ncols, figsize):
             e_std = errors.std()
             mae = np.abs(errors).mean()
             ax.scatter(y_test, y_pred, s=6, alpha=0.5, color=color, edgecolors="none", rasterized=True)
-            lims = [min(y_test.min(), y_pred.min()) - 5, min(max(y_test.max(), y_pred.max()) + 5, 135)]
+            max_val = max(y_test.max(), y_pred.max())
+            lims = [min(y_test.min(), y_pred.min()) - 5, min(max_val + 5, 200)]
             ax.plot(lims, lims, "k--", linewidth=0.6, alpha=0.4)
             ax.set_xlim(lims); ax.set_ylim(lims)
             ax.set_xlabel("True RUL", fontsize=7); ax.set_ylabel("Predicted RUL", fontsize=7)
@@ -254,7 +246,7 @@ print("\n全部图片生成完毕")
 print(f"  figures/full/  — 全模型版（3 模型 × 4 子集 = 12 子图）")
 print(f"  figures/       — Base+P2 精简版（2 模型 × 4 子集 = 8 子图）")
 
-# ===== 额外生成每子集独立图，中文文件夹分类 =====
+# ===== 每子集独立图：按模型排列，一行一个子集 =====
 print("\n===== 生成独立子集图（中文分类）=====")
 
 SUB_NAMES = {"FD001": "FD001", "FD002": "FD002", "FD003": "FD003", "FD004": "FD004"}
@@ -265,18 +257,14 @@ FOLDERS = {
 }
 FIGS_CH = FIGS / "按子集"
 
+# 分别出两套：三模型全对比版和 Base+Person2 精简版
 for mode, model_dict in [("全模型", ALL_MODELS), ("精简(Base+P2)", BASE_P2_MODELS)]:
     n = len(model_dict)
-    fs = (8, 4) if n == 2 else (12, 4)  # figsize per subset
-    nc = n  # number of columns = number of models
+    fs = (8, 4) if n == 2 else (12, 4)
+    nc = n
 
     for ch_name, plot_fn in FOLDERS.items():
         for subset in SUBSETS:
-            # 临时替换 SUBSETS 为当前子集
-            import copy
-            old_models = globals().get("_current_models", None)
-
-            # 画单子集图：把模型放列，只有一行
             fig, axes = plt.subplots(1, nc, figsize=fs)
             fig.suptitle(f"{ch_name} — {subset}", fontsize=14, y=1.02)
             model_items = list(model_dict.items())
@@ -285,6 +273,7 @@ for mode, model_dict in [("全模型", ALL_MODELS), ("精简(Base+P2)", BASE_P2_
                 ax = axes[col_idx] if nc > 1 else axes
 
                 if ch_name == "训练曲线":
+                    # 加载并绘制训练历史：loss 曲线 + RMSE 双纵轴
                     hist = load_history(model_name, subset)
                     if hist is None:
                         ax.text(0.5, 0.5, "N/A", ha="center", va="center", transform=ax.transAxes)
@@ -294,14 +283,6 @@ for mode, model_dict in [("全模型", ALL_MODELS), ("精简(Base+P2)", BASE_P2_
                     ax.semilogy(epochs, hist["train_loss"], label="Train Loss", color=color, linewidth=0.8)
                     if "val_loss" in hist and hist["val_loss"]:
                         ax.semilogy(epochs, hist["val_loss"], label="Val Loss", color=color, linestyle="--", linewidth=0.8)
-                    if "val_rmse" in hist and hist["val_rmse"]:
-                        ax2 = ax.twinx()
-                        ax2.plot(epochs, hist["val_rmse"], color="gray", linewidth=0.7, linestyle=":")
-                        ax2.set_ylabel("RMSE", fontsize=8, color="gray")
-                        ax2.tick_params(labelsize=7, colors="gray")
-                        ax2.text(0.95, 0.95, f"RMSE={hist['val_rmse'][-1]:.1f}", transform=ax2.transAxes,
-                                 fontsize=8, color="gray", ha="right", va="top",
-                                 bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="gray", alpha=0.7))
                     ax.set_xlabel("Epoch", fontsize=8)
                     ax.set_ylabel("Loss (log)", fontsize=8)
                     ax.set_title(model_label, fontsize=10)
@@ -309,6 +290,7 @@ for mode, model_dict in [("全模型", ALL_MODELS), ("精简(Base+P2)", BASE_P2_
                     ax.grid(True, alpha=0.15)
 
                 elif ch_name == "散点图":
+                    # 散点图：横轴是真实 RUL，纵轴是预测 RUL，越靠近对角线越好
                     y_test, y_pred = load_preds(model_name, subset)
                     if y_test is None:
                         ax.text(0.5, 0.5, "N/A", ha="center", va="center", transform=ax.transAxes)
@@ -320,7 +302,8 @@ for mode, model_dict in [("全模型", ALL_MODELS), ("精简(Base+P2)", BASE_P2_
                     score = metrics["Score"] if metrics else 0
                     errors = y_pred - y_test
                     ax.scatter(y_test, y_pred, s=8, alpha=0.5, color=color, edgecolors="none", rasterized=True)
-                    lims = [min(y_test.min(), y_pred.min())-5, min(max(y_test.max(), y_pred.max())+5, 135)]
+                    max_val = max(y_test.max(), y_pred.max())
+                    lims = [min(y_test.min(), y_pred.min()) - 5, min(max_val + 5, 200)]
                     ax.plot(lims, lims, "k--", linewidth=0.6, alpha=0.4)
                     ax.set_xlim(lims); ax.set_ylim(lims)
                     ax.set_xlabel("True RUL", fontsize=8); ax.set_ylabel("Predicted RUL", fontsize=8)
@@ -332,6 +315,7 @@ for mode, model_dict in [("全模型", ALL_MODELS), ("精简(Base+P2)", BASE_P2_
                     ax.set_aspect("equal"); ax.grid(alpha=0.15)
 
                 elif ch_name == "引擎预测":
+                    # 把测试引擎按真实 RUL 排序，看预测曲线和真实曲线是否吻合
                     y_test, y_pred = load_preds(model_name, subset)
                     if y_test is None:
                         ax.text(0.5, 0.5, "N/A", ha="center", va="center", transform=ax.transAxes)

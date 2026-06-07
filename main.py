@@ -12,13 +12,14 @@ from src.step3_models.person2_model import MSPatchiTransformerRUL
 from src.step3_models.trainer import Trainer
 
 MODEL_MAP = {
-    "base": PatchiTransformerRUL,
-    "person1": ConvPatchiTransformerRUL,
-    "person2": MSPatchiTransformerRUL,
+    "base": PatchiTransformerRUL,        # 基线：线性 Patch
+    "person1": ConvPatchiTransformerRUL, # 卷积增强 Patch
+    "person2": MSPatchiTransformerRUL,   # 多尺度卷积融合
 }
 
 
 def set_seed(seed: int):
+    """固定随机种子，确保实验结果可复现"""
     np.random.seed(seed)
     torch.manual_seed(seed)
 
@@ -27,20 +28,20 @@ def save_results(model_name, subset, cfg, history, y_test, y_pred, save_dir="res
     os.makedirs(save_dir, exist_ok=True)
     prefix = f"{save_dir}/{model_name}_{subset}"
 
-    # Metrics
+    # 算指标
     metrics = all_metrics(y_test, y_pred)
     with open(f"{prefix}_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
 
-    # Predictions
+    # 存预测结果
     np.save(f"{prefix}_y_test.npy", y_test)
     np.save(f"{prefix}_y_pred.npy", y_pred)
 
-    # Training history
+    # 存训练历史
     if history:
         np.savez(f"{prefix}_history.npz", **{k: np.array(v) for k, v in history.items()})
 
-    # Config
+    # 存配置
     with open(f"{prefix}_config.json", "w") as f:
         json.dump({k: str(v) if isinstance(v, (list, tuple)) and all(isinstance(x, int) for x in v) else v
                     for k, v in cfg.__dict__.items() if not k.startswith("_")},
@@ -75,12 +76,12 @@ def main():
     print(f"=== {model_name} on {cfg.subset} ===")
     print(f"Window={cfg.window_size}, d_model={cfg.d_model}, layers={cfg.e_layers}, heads={cfg.n_heads}")
 
-    # Data
+    # 加载数据
     print("\nLoading data...")
     X_train, y_train, unit_ids, X_test, y_test = load_data(cfg)
     print(f"Train: {len(X_train)}, Test engines: {len(X_test)}, Shape: {X_train.shape[1:]}")
 
-    # Split train/val by engine to avoid data leakage
+    # 按引擎划分训练集和验证集，保证同一个引擎的数据不会两边都有
     unique_engines = np.unique(unit_ids)
     np.random.seed(cfg.seed)
     np.random.shuffle(unique_engines)
@@ -93,20 +94,20 @@ def main():
     X_tr, y_tr = X_train[~val_mask], y_train[~val_mask]
     print(f"Train/Val: {len(X_tr)}/{len(X_val)} (engines: {len(train_engines)}/{len(val_engines)})")
 
-    # Model
+    # 搭模型
     model = model_cls(cfg)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"Parameters: {n_params:,}")
 
-    # Train
+    # 开始训练
     trainer = Trainer(model, cfg, cfg.device)
     history = trainer.fit(X_tr, y_tr, X_val, y_val)
 
-    # Evaluate
+    # 用验证集上最好的模型做测试
     trainer.load_best()
     y_pred = trainer.predict(X_test)
 
-    # Save & print
+    # 保存结果并打印
     metrics = save_results(model_name, cfg.subset, cfg, history, y_test, y_pred, args.save_dir)
     print(f"\n=== {cfg.subset} {model_name} Results ===")
     for k, v in metrics.items():

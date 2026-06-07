@@ -15,11 +15,11 @@ Multi-branch time series Transformer for aircraft engine remaining useful life p
 | Subset | Best Model | RMSE | R² |
 |--------|-----------|------|-----|
 | FD001 | **Person 2** | **15.27** | **0.86** |
-| FD002 | **Person 2** | **27.98** | **0.73** |
+| FD002 | **Person 2** | **26.78** | **0.74** |
 | FD003 | **Person 2** | **16.41** | **0.84** |
-| FD004 | Person 1 | 25.57 | 0.78 |
+| FD004 | **Person 2** | **24.95** | **0.78** |
 
-Person 2 is the only model achieving R² > 0.72 across all four subsets.
+Person 2 achieves best RMSE across all four subsets.
 
 ## Project Structure
 

@@ -13,9 +13,21 @@ venv/
 # Data (too large)
 archive/
 
-# Results (regenerable)
-results/figures/
+# Results (regenerable subdirs only)
+results/figures/2-训练曲线/
+results/figures/3-预测散点图/
+results/figures/4-引擎预测/
 results/CMAPSS_Results.xlsx
+results/main_experiments/
+results/ablation/
+results/summary.csv
+results/new_norm/
+
+# Submission copy (not for git)
+提交/
+
+# Generated docs (regenerable)
+docs/CMAPSS_RUL_技术讲义.html
 
 # Literature PDFs
 docs/literature/
